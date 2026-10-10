@@ -2,6 +2,7 @@ import Document from '../models/Document.js';
 import Message from '../models/Message.js';
 import { embedQuery } from '../services/embeddingService.js';
 import { findRelevantChunks } from '../services/vectorSearchService.js';
+import { isOverviewQuestion, getOverviewChunks } from '../services/overviewService.js';
 import { generateAnswer } from '../services/aiService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
@@ -25,15 +26,22 @@ export const askQuestion = asyncHandler(async (req, res) => {
     throw new Error(`Document is not ready yet (status: ${document.status})`);
   }
 
-  // Step 1: turn the question into a vector using the SAME embedding model
-  // used for the chunks, but with taskType "RETRIEVAL_QUERY" instead of
-  // "RETRIEVAL_DOCUMENT" — this asymmetry is intentional and documented by
-  // Google: a question and its answer phrase things differently, and the
-  // model embeds each role slightly differently to improve match quality.
-  const queryEmbedding = await embedQuery(question);
-
-  // Step 2: retrieval — find the chunks whose meaning is closest to the question
-  const relevantChunks = await findRelevantChunks(queryEmbedding, documentId, req.userId);
+  // Retrieval: pick the strategy based on the kind of question.
+  // - Overview questions ("summarize", "key points") have no specific topic,
+  //   so vector search would return random chunks. Instead we sample chunks
+  //   evenly across the whole document. These have no similarity score.
+  // - Specific questions use embeddings + Atlas Vector Search as before.
+  let relevantChunks;
+  if (isOverviewQuestion(question)) {
+    const sampled = await getOverviewChunks(documentId, req.userId);
+    relevantChunks = sampled.map((c) => ({ ...c, score: null }));
+  } else {
+    // taskType "RETRIEVAL_QUERY" differs from "RETRIEVAL_DOCUMENT" on purpose:
+    // a question and its answer phrase things differently, and the model
+    // embeds each role slightly differently to improve match quality.
+    const queryEmbedding = await embedQuery(question);
+    relevantChunks = await findRelevantChunks(queryEmbedding, documentId, req.userId);
+  }
 
   if (relevantChunks.length === 0) {
     const fallbackAnswer = "I couldn't find anything relevant to that question in this document.";
@@ -47,7 +55,7 @@ export const askQuestion = asyncHandler(async (req, res) => {
     return res.json({ answer: fallbackAnswer, sources: [], messageId: message._id });
   }
 
-  // Step 3: generation — Gemini answers using ONLY the retrieved chunks
+  // Generation: Gemini answers using ONLY the retrieved chunks
   const answer = await generateAnswer(question, relevantChunks);
 
   const message = await Message.create({

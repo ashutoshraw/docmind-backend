@@ -1,7 +1,8 @@
 import { env } from '../config/env.js';
+import { fetchWithRetry } from '../utils/fetchWithRetry.js';
 
 const EMBEDDING_MODEL = 'gemini-embedding-2';
-const EMBEDDING_URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent?key=${env.GEMINI_API_KEY}`;
+const EMBEDDING_URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`;
 
 // Fixed output size so every vector in the database is comparable —
 // Atlas Vector Search requires all vectors in an index to share one dimension.
@@ -9,41 +10,29 @@ export const EMBEDDING_DIMENSIONS = 768;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Same resilience pattern as aiService: 503 (overloaded) and 429 (rate
-// limited) are transient and worth retrying with backoff; anything else
-// fails immediately since retrying won't help.
-const RETRYABLE_STATUSES = [503, 429];
-const MAX_RETRIES = 3;
-
 // taskType tells the model HOW the text will be used, which changes the
 // resulting vector slightly: a document stored for later retrieval gets
 // embedded differently than a live user question searching for it. Using
 // the right type for each noticeably improves match quality.
-const embedOne = async (text, taskType, attempt = 1) => {
-  const response = await fetch(EMBEDDING_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      content: { parts: [{ text }] },
-      taskType,
-      outputDimensionality: EMBEDDING_DIMENSIONS,
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text();
-
-    if (RETRYABLE_STATUSES.includes(response.status) && attempt < MAX_RETRIES) {
-      const delayMs = 1000 * 2 ** (attempt - 1);
-      console.warn(
-        `Gemini embedding returned ${response.status}, retrying in ${delayMs}ms (attempt ${attempt}/${MAX_RETRIES})`
-      );
-      await sleep(delayMs);
-      return embedOne(text, taskType, attempt + 1);
-    }
-
-    throw new Error(`Gemini embedding request failed (${response.status}): ${errBody}`);
-  }
+// Retry/backoff on 503/429/5xx, network failures and timeouts is handled
+// by the shared fetchWithRetry helper.
+const embedOne = async (text, taskType) => {
+  const response = await fetchWithRetry(
+    EMBEDDING_URL,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        content: { parts: [{ text }] },
+        taskType,
+        outputDimensionality: EMBEDDING_DIMENSIONS,
+      }),
+    },
+    { label: `Gemini embedding (${taskType})`, maxAttempts: 3, timeoutMs: 15000 }
+  );
 
   const data = await response.json();
   return data.embedding.values; // array of 768 numbers

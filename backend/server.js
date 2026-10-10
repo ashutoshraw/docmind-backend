@@ -10,6 +10,8 @@ import { errorHandler, notFound } from './src/middleware/errorHandler.js';
 import authRoutes from './src/routes/authRoutes.js';
 import documentRoutes from './src/routes/documentRoutes.js';
 import chatRoutes from './src/routes/chatRoutes.js';
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
 

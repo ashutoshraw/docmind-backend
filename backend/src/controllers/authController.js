@@ -103,7 +103,8 @@ export const logout = asyncHandler(async (req, res) => {
       // token already invalid/expired — nothing to clean up
     }
   }
-  res.clearCookie('refreshToken', cookieOptions);
+  const { maxAge, ...clearOptions } = cookieOptions; // maxAge is meaningless when clearing
+res.clearCookie('refreshToken', clearOptions);
   res.json({ message: 'Logged out successfully' });
 });
 

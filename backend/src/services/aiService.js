@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { fetchWithRetry } from '../utils/fetchWithRetry.js';
 
 // Stable aliases Google maintains so we don't need manual updates every time
 // a specific dated model version gets deprecated. flash-lite is the lighter,
@@ -9,7 +10,7 @@ const PRIMARY_MODEL = 'gemini-flash-lite-latest';
 const FALLBACK_MODEL = 'gemini-flash-latest';
 
 const urlFor = (model) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 // This is the core of "grounded" AI: instead of letting Gemini answer from
 // its general training knowledge, we explicitly hand it only the retrieved
@@ -35,46 +36,28 @@ ${question}
 ANSWER:`;
 };
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// 503 (model overloaded) and 429 (rate limited) are TRANSIENT failures —
-// they're about Google's servers or quota at this exact moment, not
-// anything wrong with the request itself. Retrying after a short wait
-// often succeeds. We do NOT retry other errors (like 400 bad request),
-// since those will just fail the same way again instantly.
-const RETRYABLE_STATUSES = [503, 429];
-const MAX_RETRIES = 3;
-
-const callGemini = async (prompt, model, attempt = 1) => {
-  const response = await fetch(urlFor(model), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.2, // low temperature: favors sticking to facts over creativity, important for a Q&A tool
-        maxOutputTokens: 1024,
+// Retries (503/429/5xx, network failures, timeouts) are handled by the
+// shared fetchWithRetry helper. The API key travels in a header rather than
+// the URL so it can't leak into error messages or logs.
+const callGemini = async (prompt, model) => {
+  const response = await fetchWithRetry(
+    urlFor(model),
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': env.GEMINI_API_KEY,
       },
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text();
-
-    if (RETRYABLE_STATUSES.includes(response.status) && attempt < MAX_RETRIES) {
-      // Exponential backoff: wait longer after each failed attempt
-      // (1s, then 2s, then 4s) instead of hammering an already-overloaded
-      // server at a fixed interval.
-      const delayMs = 1000 * 2 ** (attempt - 1);
-      console.warn(
-        `${model} returned ${response.status}, retrying in ${delayMs}ms (attempt ${attempt}/${MAX_RETRIES})`
-      );
-      await sleep(delayMs);
-      return callGemini(prompt, model, attempt + 1);
-    }
-
-    throw new Error(`Gemini generation request failed (${response.status}): ${errBody}`);
-  }
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2, // low temperature: favors sticking to facts over creativity, important for a Q&A tool
+          maxOutputTokens: 1024,
+        },
+      }),
+    },
+    { label: `Gemini ${model}`, maxAttempts: 3, timeoutMs: 20000 }
+  );
 
   return response.json();
 };
@@ -89,8 +72,8 @@ export const generateAnswer = async (question, contextChunks) => {
     data = await callGemini(prompt, PRIMARY_MODEL);
   } catch (primaryErr) {
     // Primary model exhausted its own retries — try the fallback model
-    // once before giving up entirely. Two different models being
-    // overloaded at the same moment is rare.
+    // once before giving up entirely. Two different models failing at the
+    // same moment is rare.
     console.warn(`Primary model failed, trying fallback: ${primaryErr.message}`);
     data = await callGemini(prompt, FALLBACK_MODEL);
   }
