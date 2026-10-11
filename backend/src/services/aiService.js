@@ -25,7 +25,7 @@ const buildPrompt = (question, contextChunks) => {
   return `You are a helpful assistant answering questions about a specific document.
 Answer the question using ONLY the context chunks below. Do not use any outside knowledge.
 If the answer cannot be found in the context, say "I couldn't find that in the document" — do not guess or make something up.
-When you use information from a chunk, mention which chunk number it came from, like (Chunk 2).
+Do not mention chunk numbers or refer to "chunks" in your answer; write it as a natural response.
 
 CONTEXT:
 ${context}
