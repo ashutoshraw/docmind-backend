@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const documentSchema = new mongoose.Schema(
   {
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    title: { type: String, required: true, trim: true },
+      title: { type: String, required: true, trim: true, maxlength: 100 },
     sourceType: { type: String, enum: ['pdf', 'text', 'pasted'], required: true },
     // Full extracted text kept for reference/debugging, not used directly in chat
     rawText: { type: String, required: true },

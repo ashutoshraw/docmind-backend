@@ -4,6 +4,7 @@ import { extractText } from '../services/extractionService.js';
 import { chunkText } from '../services/chunkingService.js';
 import { embedChunksInBatches } from '../services/embeddingService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+const MAX_TITLE = 100;
 
 // Runs after the HTTP response has already been sent. Any error here gets
 // caught and written onto the document as status "failed", so the frontend
@@ -53,10 +54,15 @@ export const uploadDocument = asyncHandler(async (req, res) => {
   let sourceType;
   let title = req.body.title?.trim();
 
+  if (title && title.length > MAX_TITLE) {
+    res.status(400);
+    throw new Error(`Title must be ${MAX_TITLE} characters or fewer`);
+  }
+
   if (req.file) {
     rawText = await extractText(req.file.buffer, req.file.mimetype);
     sourceType = req.file.mimetype === 'application/pdf' ? 'pdf' : 'text';
-    if (!title) title = req.file.originalname;
+    if (!title) title = req.file.originalname.slice(0, MAX_TITLE);
   } else if (req.body.text?.trim()) {
     rawText = req.body.text.trim();
     sourceType = 'pasted';
