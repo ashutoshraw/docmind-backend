@@ -18,7 +18,7 @@ const app = express();
 // Render (and most hosts) sit behind a reverse proxy. Without this, Express
 // sees every request as coming from the proxy's internal IP, which breaks
 // rate limiting (everyone would share one limit) and secure-cookie detection.
-app.set('trust proxy', 1);
+app.set('trust proxy', 4);
 
 // --- Security & performance middleware ---
 app.use(helmet()); // sets security-related HTTP headers (XSS protection, no-sniff, etc.)
