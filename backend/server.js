@@ -41,9 +41,7 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.get('/api/debug-ip', (req, res) => {
-  res.json({ ip: req.ip, forwardedFor: req.headers['x-forwarded-for'] });
-});
+
 app.use('/api', globalLimiter);
 
 // --- Health check (used by Render to confirm the service is alive) ---
