@@ -7,7 +7,7 @@ import multer from 'multer';
 const storage = multer.memoryStorage();
 
 const ALLOWED_MIMETYPES = ['application/pdf', 'text/plain'];
-const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_MB = 5;
 
 const fileFilter = (req, file, cb) => {
   if (!ALLOWED_MIMETYPES.includes(file.mimetype)) {

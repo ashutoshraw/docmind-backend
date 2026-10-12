@@ -34,7 +34,7 @@ All routes are under `/api`. Routes marked **protected** need an `Authorization:
 | GET | `/chat/:documentId/history` | none | past questions and answers for that document (**protected**) |
 | GET | `/health` | none | `{ status, timestamp }` |
 
-Uploads are limited to 10 MB. Titles are optional and capped at 100 characters. Document processing runs in the background: the upload returns `202` immediately, and the document moves from `processing` to `ready` or `failed`.
+Uploads are limited to 5 MB. Titles are optional and capped at 100 characters. Document processing runs in the background: the upload returns `202` immediately, and the document moves from `processing` to `ready` or `failed`.
 
 ## Architecture
 
