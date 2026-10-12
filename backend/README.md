@@ -62,7 +62,7 @@ src/
 ## Key design decisions
 
 - **Chunking:** 1,200 characters with 200 overlap, maximum 150 chunks per document.
-- **Retrieval:** cosine similarity, 50 candidates, top 4 chunks kept, filtered per user so documents are never shared across accounts.
+- **Retrieval:** cosine similarity, 50 candidates, top 4 chunks kept, filtered by user and by document inside the vector search itself, so documents are never shared across accounts and a question only searches the document being chatted with.
 - **Background ingestion:** embedding happens after the upload response, with batches of 3 and a pause between batches to stay inside free-tier rate limits. Any failure marks the document `failed` instead of leaving it stuck.
 - **Grounded answers:** the prompt tells the model to answer only from the supplied chunks and to say when the answer is not there.
 - **Resilient AI calls:** a shared `fetchWithRetry` helper retries 429/5xx responses, network failures and timeouts with exponential backoff and jitter (3 attempts, per-request timeouts). Generation falls back from `gemini-flash-lite-latest` to `gemini-flash-latest`. API keys travel in headers, not URLs.
@@ -99,7 +99,24 @@ Create a vector search index on the `chunks` collection:
 - **Path:** `embedding`
 - **Dimensions:** 768
 - **Similarity:** cosine
-- **Filter fields:** the fields used in the `$vectorSearch` filter in `src/services/vectorSearchService.js` (documents are filtered by owner)
+- **Filter fields:** `owner` and `document`, because `$vectorSearch` filters by both so a question only searches the chosen document.
+
+JSON definition:
+
+```json
+{
+  "fields": [
+    {
+      "type": "vector",
+      "path": "embedding",
+      "numDimensions": 768,
+      "similarity": "cosine"
+    },
+    { "path": "owner", "type": "filter" },
+    { "path": "document", "type": "filter" }
+  ]
+}
+```
 
 ## Run locally
 
