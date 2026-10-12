@@ -17,17 +17,17 @@ export const findRelevantChunks = async (queryEmbedding, documentId, ownerId) =>
         queryVector: queryEmbedding,
         numCandidates: 50, // how many candidates Atlas considers before narrowing down — higher = more accurate, slower
         limit: TOP_K,
+        // Both fields are declared as "filter" fields in the index, so Atlas
+        // narrows to this user's chunks of THIS document BEFORE picking the
+        // top K. Filtering afterwards (with $match) could leave fewer than K
+        // results, or none, when a user has many documents.
         filter: {
-          owner: new mongoose.Types.ObjectId(ownerId),
+          $and: [
+            { owner: { $eq: new mongoose.Types.ObjectId(ownerId) } },
+            { document: { $eq: new mongoose.Types.ObjectId(documentId) } },
+          ],
         },
       },
-    },
-    {
-      // Only filter by document AFTER vector search, since $vectorSearch's
-      // own "filter" option only supports fields declared as type "filter"
-      // in the index (we only declared owner). This still works correctly,
-      // just narrows down from the top candidates rather than before them.
-      $match: { document: new mongoose.Types.ObjectId(documentId) },
     },
     {
       $project: {
