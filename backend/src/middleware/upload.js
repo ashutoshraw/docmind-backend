@@ -16,8 +16,26 @@ const fileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-export const upload = multer({
+const multerUpload = multer({
   storage,
   fileFilter,
   limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
 });
+
+// Wraps multer so its errors are marked as client errors (4xx). Without this,
+// the error handler sees a plain Error with no status and hides the real
+// message behind a generic 500 response.
+export const upload = {
+  single: (field) => (req, res, next) => {
+    multerUpload.single(field)(req, res, (err) => {
+      if (!err) return next();
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        res.status(413);
+        err.message = `File is too large. The limit is ${MAX_FILE_SIZE_MB} MB.`;
+      } else {
+        res.status(400);
+      }
+      next(err);
+    });
+  },
+};

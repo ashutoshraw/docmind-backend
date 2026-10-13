@@ -21,7 +21,16 @@ const processDocumentAsync = async (documentId, rawText) => {
       return;
     }
 
-    const embeddings = await embedChunksInBatches(chunks);
+      await Document.findByIdAndUpdate(documentId, {
+      chunksTotal: chunks.length,
+      chunksDone: 0,
+    });
+
+    // Save progress after each batch so the dashboard can show "X of Y chunks".
+    // Not awaited and errors ignored: a missed progress update must never fail the upload.
+    const embeddings = await embedChunksInBatches(chunks, (done) => {
+      Document.findByIdAndUpdate(documentId, { chunksDone: done }).catch(() => {});
+    });
 
     const chunkDocs = chunks.map((text, i) => ({
       document: documentId,
@@ -104,7 +113,7 @@ export const uploadDocument = asyncHandler(async (req, res) => {
 // GET /api/documents — list the current user's documents
 export const listDocuments = asyncHandler(async (req, res) => {
   const documents = await Document.find({ owner: req.userId })
-    .select('title sourceType status charCount chunkCount createdAt errorMessage')
+      .select('title sourceType status charCount chunkCount chunksDone chunksTotal createdAt errorMessage')
     .sort({ createdAt: -1 });
   res.json(documents);
 });

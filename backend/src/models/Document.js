@@ -3,6 +3,9 @@ import mongoose from 'mongoose';
 const documentSchema = new mongoose.Schema(
   {
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+        // Embedding progress, shown on the dashboard while status is "processing".
+    chunksTotal: { type: Number, default: 0 },
+    chunksDone: { type: Number, default: 0 },
       title: { type: String, required: true, trim: true, maxlength: 100 },
     sourceType: { type: String, enum: ['pdf', 'text', 'pasted'], required: true },
     // Full extracted text kept for reference/debugging, not used directly in chat
