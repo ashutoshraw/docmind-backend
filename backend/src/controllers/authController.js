@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
@@ -115,5 +116,83 @@ export const getMe = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('User not found');
   }
-  res.json({ id: user._id, name: user.name, email: user.email });
+    res.json({
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    isGuest: user.isGuest,
+    guestExpiresAt: user.guestExpiresAt ?? null,
+  });
+});
+
+// POST /api/auth/guest — creates a temporary account for "Try it now"
+export const guestLogin = asyncHandler(async (req, res) => {
+  const GUEST_LIFETIME_MS = 24 * 60 * 60 * 1000; // 24 hours
+  const id = crypto.randomBytes(8).toString('hex');
+
+  const user = await User.create({
+    name: 'Guest',
+    email: `guest-${id}@guest.docmind.local`,
+    password: crypto.randomBytes(24).toString('hex'), // never shown or used
+    isGuest: true,
+    guestExpiresAt: new Date(Date.now() + GUEST_LIFETIME_MS),
+  });
+
+  const accessToken = generateAccessToken(user._id);
+  const refreshToken = generateRefreshToken(user._id);
+
+  user.refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+  await user.save();
+
+  res.cookie('refreshToken', refreshToken, cookieOptions);
+  res.status(201).json({
+    accessToken,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      isGuest: true,
+      guestExpiresAt: user.guestExpiresAt,
+    },
+  });
+});
+
+// POST /api/auth/upgrade — turns the logged-in guest into a real account.
+// It updates the SAME user, so their documents stay attached.
+export const upgradeGuest = asyncHandler(async (req, res) => {
+  const { name, password } = req.body;
+  const email = req.body.email.trim().toLowerCase();
+
+  const user = await User.findById(req.userId);
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  if (!user.isGuest) {
+    res.status(400);
+    throw new Error('Only guest accounts can be upgraded');
+  }
+
+  const existing = await User.findOne({ email });
+  if (existing) {
+    res.status(409);
+    throw new Error('An account with this email already exists');
+  }
+
+  user.name = name;
+  user.email = email;
+  user.password = password; // hashed automatically by the pre-save hook
+  user.isGuest = false;
+  user.guestExpiresAt = undefined; // removes the field, so the TTL index no longer applies
+
+  const accessToken = generateAccessToken(user._id);
+  const refreshToken = generateRefreshToken(user._id);
+  user.refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+  await user.save();
+
+  res.cookie('refreshToken', refreshToken, cookieOptions);
+  res.json({
+    accessToken,
+    user: { id: user._id, name: user.name, email: user.email, isGuest: false },
+  });
 });

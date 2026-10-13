@@ -10,6 +10,7 @@ import { errorHandler, notFound } from './src/middleware/errorHandler.js';
 import authRoutes from './src/routes/authRoutes.js';
 import documentRoutes from './src/routes/documentRoutes.js';
 import chatRoutes from './src/routes/chatRoutes.js';
+import { cleanupOrphanedData } from './src/utils/cleanupOrphans.js';
 import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
 
@@ -63,6 +64,20 @@ const startServer = async () => {
   const server = app.listen(env.PORT, () => {
     console.log(`Server running on port ${env.PORT} [${env.NODE_ENV}]`);
   });
+    // Remove data left behind by expired guest accounts: once on startup
+  // (covers Render waking from sleep) and then every hour.
+  const runCleanup = async () => {
+    try {
+      const removed = await cleanupOrphanedData();
+      if (removed.documents || removed.chunks || removed.messages) {
+        console.log('Cleanup removed orphaned data:', removed);
+      }
+    } catch (err) {
+      console.error('Cleanup failed:', err.message);
+    }
+  };
+  runCleanup();
+  setInterval(runCleanup, 60 * 60 * 1000).unref();
 
   // Graceful shutdown: when the host sends SIGTERM (e.g. Render redeploying
   // or scaling down), finish in-flight requests instead of dropping them

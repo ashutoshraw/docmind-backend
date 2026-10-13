@@ -7,6 +7,8 @@ import {
   refresh,
   logout,
   getMe,
+   guestLogin,
+   upgradeGuest
 } from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -49,6 +51,21 @@ router.post(
   login
 );
 
+router.post('/guest', authLimiter, guestLogin);
+router.post(
+  '/upgrade',
+  authLimiter,
+  protect,
+  [
+    body('name').trim().notEmpty().withMessage('Name is required'),
+    body('email').isEmail().withMessage('Valid email is required'),
+    body('password')
+      .isLength({ min: 6 })
+      .withMessage('Password must be at least 6 characters'),
+  ],
+  validate,
+  upgradeGuest
+);
 router.post('/refresh', refresh);
 router.post('/logout', logout);
 router.get('/me', protect, getMe);
